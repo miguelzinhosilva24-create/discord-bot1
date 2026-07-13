@@ -88,4 +88,4 @@ async def naovotaram(ctx):
 
         await ctx.send(texto)
 
-bot.run(TOKEN)
+bot.run(os.getenv("DISCORD_TOKEN"))
