@@ -1,27 +1,29 @@
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 import os
 import traceback
 
-# ====================================================================
-# CONFIGURAÇÃO DO SEU TOKEN
-# ====================================================================
-# Se preferires, podes colar o token direto aqui dentro das aspas.
-# Se deixares vazio "", o bot vai usar a variável que criaste na Railway!
-TOKEN_DIRETO = "MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM"
-TOKEN = TOKEN_DIRETO if TOKEN_DIRETO else os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM")
-# ====================================================================
+# ==========================
+# TOKEN
+# ==========================
 
-# Configuração do Fuso Horário de Portugal
-try:
-    from zoneinfo import ZoneInfo
-    PORTUGAL = ZoneInfo("Europe/Lisbon")
-except Exception:
-    # Fallback caso o sistema não tenha o zoneinfo instalado
-    PORTUGAL = timezone(timedelta(hours=1))
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Configurações de IDs de Canais e Cargos Associados
+if not TOKEN:
+    raise ValueError("A variável DISCORD_TOKEN não foi encontrada.")
+
+# ==========================
+# FUSO HORÁRIO
+# ==========================
+
+PORTUGAL = ZoneInfo("Europe/Lisbon")
+
+# ==========================
+# CONFIGURAÇÃO
+# ==========================
+
 CONFIGS = {
     1519822701936771244: {
         "cargo": "[🧢] Contratado"
@@ -31,30 +33,37 @@ CONFIGS = {
     }
 }
 
-# Permissões do Bot (Intents)
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guilds = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-mensagens_votacao = {}
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
+mensagens_votacao = {}
 # ==========================
 # FUNÇÕES AUXILIARES
 # ==========================
 
-async def obter_canal_seguro(canal_id):
+async def obter_canal(canal_id):
     canal = bot.get_channel(canal_id)
+
     if canal is None:
         try:
             canal = await bot.fetch_channel(canal_id)
         except Exception:
             return None
+
     return canal
 
-async def criar_votacao_no_canal(canal):
+
+async def criar_votacao(canal):
+
     mensagens_votacao[canal.id] = []
+
     data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
     embed = discord.Embed(
@@ -70,135 +79,282 @@ async def criar_votacao_no_canal(canal):
     )
 
     await canal.send(embed=embed)
+
     horas = list(range(13, 24)) + [0]
 
     for hora in horas:
+
         msg = await canal.send(f"**{hora:02d}:00**")
+
         mensagens_votacao[canal.id].append(msg.id)
+
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
         await msg.add_reaction("❓")
 
-async def obter_nao_votaram(canal, nome_cargo):
-    msg_ids = mensagens_votacao.get(canal.id, [])
-    if not msg_ids:
-        return None, "❌ Não há nenhuma votação ativa registada na memória do bot para este canal. Usa `!votacao` primeiro."
 
-    if not canal.guild.chunked:
-        await canal.guild.chunk()
+async def quem_nao_votou(canal, cargo_nome):
 
-    cargo = discord.utils.get(canal.guild.roles, name=nome_cargo)
+    if canal.id not in mensagens_votacao:
+        return None, "❌ Ainda não existe nenhuma votação."
+
+    cargo = discord.utils.get(
+        canal.guild.roles,
+        name=cargo_nome
+    )
+
     if cargo is None:
-        return None, f"❌ Cargo '{nome_cargo}' não foi encontrado neste servidor."
+        return None, f"❌ Cargo '{cargo_nome}' não encontrado."
 
     votaram = set()
-    for msg_id in msg_ids:
+
+    for msg_id in mensagens_votacao[canal.id]:
+
         try:
             mensagem = await canal.fetch_message(msg_id)
         except Exception:
             continue
 
         for reaction in mensagem.reactions:
+
             async for user in reaction.users():
+
                 if not user.bot:
                     votaram.add(user.id)
 
     faltam = []
+
     for membro in cargo.members:
+
         if membro.bot:
             continue
+
         if membro.id not in votaram:
             faltam.append(membro.mention)
 
     return faltam, None
-
-# ==========================
-# EVENTOS E COMANDOS
+    # ==========================
+# BOT LIGADO
 # ==========================
 
 @bot.event
 async def on_ready():
-    print(f"=====================================")
-    print(f"✅ Bot ligado com sucesso como {bot.user}")
-    print(f"=====================================")
-    
+
+    print("=" * 50)
+    print(f"✅ Bot ligado como {bot.user}")
+    print("=" * 50)
+
     for guild in bot.guilds:
-        await guild.chunk()
-        
+        try:
+            await guild.chunk()
+        except:
+            pass
+
     if not votacao_automatica.is_running():
         votacao_automatica.start()
+
     if not verificar_nao_votaram.is_running():
         verificar_nao_votaram.start()
 
+
+# ==========================
+# COMANDO !VOTACAO
+# ==========================
+
 @bot.command()
 async def votacao(ctx):
+
     if ctx.channel.id not in CONFIGS:
-        await ctx.send("❌ Este canal não está configurado nas definições do bot.")
+        await ctx.send("❌ Este canal não está configurado.")
         return
-    try:
-        await ctx.send("🔄 A iniciar votação...")
-        await criar_votacao_no_canal(ctx.channel)
-    except Exception as e:
-        await ctx.send(f"❌ Erro ao criar votação: `{str(e)}`")
+
+    await criar_votacao(ctx.channel)
+
+    await ctx.send("✅ Votação criada com sucesso.")
+
+
+# ==========================
+# COMANDO !NAOVOTARAM
+# ==========================
 
 @bot.command()
 async def naovotaram(ctx):
+
     if ctx.channel.id not in CONFIGS:
-        await ctx.send("❌ Este canal não está configurado nas definições do bot.")
+        await ctx.send("❌ Este canal não está configurado.")
         return
 
-    nome_cargo = CONFIGS[ctx.channel.id]["cargo"]
+    cargo = CONFIGS[ctx.channel.id]["cargo"]
+
     async with ctx.typing():
-        faltam, erro = await obter_nao_votaram(ctx.channel, nome_cargo)
+
+        faltam, erro = await quem_nao_votou(
+            ctx.channel,
+            cargo
+        )
 
     if erro:
         await ctx.send(erro)
         return
 
     data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
+
     if not faltam:
-        await ctx.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
+
+        embed = discord.Embed(
+            title="✅ Todos votaram",
+            description=f"Todos os membros com o cargo **{cargo}** votaram.\n\n📅 {data}",
+            color=0x2ecc71
+        )
+
+        await ctx.send(embed=embed)
+
     else:
-        texto = f"📅 **{data}**\n\n❌ **Membros com o cargo {nome_cargo} que ainda não votaram ({len(faltam)}):**\n\n"
-        texto += "\n".join(faltam)
-        await ctx.send(texto)
 
-# ==========================
-# TAREFAS AUTOMÁTICAS
+        embed = discord.Embed(
+            title="❌ Ainda não votaram",
+            description="\n".join(faltam),
+            color=0xe74c3c
+        )
+
+        embed.set_footer(
+            text=f"{len(faltam)} membro(s) • {data}"
+        )
+
+        await ctx.send(embed=embed)
+        # ==========================
+# VOTAÇÃO AUTOMÁTICA (00:01)
 # ==========================
 
-# Votação Diária Automática (Executada às 00:01 do fuso horário de Portugal)
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PORTUGAL))
 async def votacao_automatica():
-    for canal_id in CONFIGS.keys():
-        canal = await obter_canal_seguro(canal_id)
-        if canal is not None:
-            try:
-                await criar_votacao_no_canal(canal)
-            except Exception as e:
-                print(f"Erro na votação diária automática: {e}")
 
-# Alerta de Membros que não Votaram (Executado às 14:00 do fuso horário de Portugal)
+    print("📅 A criar votação automática...")
+
+    for canal_id in CONFIGS:
+
+        canal = await obter_canal(canal_id)
+
+        if canal is None:
+            print(f"❌ Canal {canal_id} não encontrado.")
+            continue
+
+        try:
+
+            await criar_votacao(canal)
+
+            print(f"✅ Votação criada em #{canal.name}")
+
+        except Exception as e:
+
+            print(f"Erro no canal {canal_id}:")
+            traceback.print_exc()
+
+
+@votacao_automatica.before_loop
+async def antes_votacao():
+
+    await bot.wait_until_ready()
+    # ==========================
+# VERIFICAR QUEM NÃO VOTOU (14:00)
+# ==========================
+
 @tasks.loop(time=time(hour=14, minute=0, tzinfo=PORTUGAL))
 async def verificar_nao_votaram():
+
+    print("🔍 A verificar quem não votou...")
+
     for canal_id, info in CONFIGS.items():
-        canal = await obter_canal_seguro(canal_id)
+
+        canal = await obter_canal(canal_id)
+
         if canal is None:
             continue
 
-        nome_cargo = info["cargo"]
+        cargo = info["cargo"]
+
         try:
-            faltam, erro = await obter_nao_votaram(canal, nome_cargo)
+
+            faltam, erro = await quem_nao_votou(
+                canal,
+                cargo
+            )
+
             if erro:
+                print(erro)
                 continue
 
             data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
-            if not faltam:
-                await canal.send(f"✅ Todos com o cargo **{nome_cargo}** votaram!\n📅 {data}")
-            else:
-                texto = f"📅 **{data}**\n\n❌ **Membros com o cargo {nome_cargo} que ainda não votaram ({len(faltam)}):**\n\n"
-                texto += "\n".join(faltam)
-                await canal.send(texto)
-        except Exception as e:
-            print(f"Erro ao verificar quem não votou automaticamente: {e}")
 
+            if not faltam:
+
+                embed = discord.Embed(
+                    title="✅ Todos votaram",
+                    description=(
+                        f"Todos os membros com o cargo **{cargo}** "
+                        f"votaram.\n\n📅 {data}"
+                    ),
+                    color=0x2ecc71
+                )
+
+                await canal.send(embed=embed)
+
+            else:
+
+                embed = discord.Embed(
+                    title="❌ Ainda não votaram",
+                    description="\n".join(faltam),
+                    color=0xe74c3c
+                )
+
+                embed.add_field(
+                    name="Cargo",
+                    value=cargo,
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="Total",
+                    value=str(len(faltam)),
+                    inline=True
+                )
+
+                embed.set_footer(
+                    text=data
+                )
+
+                await canal.send(embed=embed)
+
+        except Exception:
+
+            traceback.print_exc()
+
+
+@verificar_nao_votaram.before_loop
+async def antes_verificar():
+
+    await bot.wait_until_ready()
+    # ==========================
+# INICIAR BOT
+# ==========================
+
+if __name__ == "__main__":
+
+    print("=" * 50)
+    print("🚀 A iniciar o bot...")
+    print("=" * 50)
+
+    if not TOKEN:
+        raise ValueError(
+            "A variável DISCORD_TOKEN não foi encontrada."
+        )
+
+    try:
+        bot.run(TOKEN)
+
+    except discord.LoginFailure:
+        print("❌ Token inválido.")
+
+    except Exception:
+        print("❌ Erro ao iniciar o bot:")
+        traceback.print_exc()
