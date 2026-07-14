@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 import os
 
 TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cGBRPTrzeri1c")
@@ -9,20 +10,14 @@ TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cG
 # CONFIGURAÇÕES
 # ==========================
 
-# Evita o crash "ZoneInfoNotFoundError" comum em hostings Linux (ex: Square Cloud)
-try:
-    from zoneinfo import ZoneInfo
-    PORTUGAL = ZoneInfo("Europe/Lisbon")
-except Exception:
-    # Se falhar, define manualmente UTC+1 (Horário de Portugal)
-    PORTUGAL = timezone(timedelta(hours=1))
+PORTUGAL = ZoneInfo("Europe/Lisbon")
 
-# Mapeamento de cada Canal ID para o respetivo Cargo de cada servidor
+# Dicionário com as configurações de cada canal/servidor
 CONFIGS = {
     1519822701936771244: {
         "cargo": "[🧢] Contratado"
     },
-    1478143333351162150: {
+    1526617431022370868: {
         "cargo": "[🧢] Caixa Baixa"
     }
 }
@@ -30,11 +25,11 @@ CONFIGS = {
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.guilds = True
+intents.guilds = True  # Garante acesso correto às informações dos servidores
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Armazena os IDs das mensagens por Canal: { canal_id: [msg_id, msg_id, ...] }
+# Agora guardamos as mensagens por Canal ID -> ex: { 1519822701936...: [id1, id2, ...] }
 mensagens_votacao = {}
 
 # ==========================
@@ -42,10 +37,10 @@ mensagens_votacao = {}
 # ==========================
 
 async def criar_votacao_no_canal(canal):
-    """Gera a votação diária num canal específico e guarda os IDs das mensagens."""
+    """Cria a votação num canal específico e guarda os IDs das mensagens."""
     mensagens_votacao[canal.id] = []
     
-    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
+    data = datetime.now().strftime("%d/%m/%Y")
 
     embed = discord.Embed(
         title="📅 Votação de Disponibilidade",
@@ -72,7 +67,7 @@ async def criar_votacao_no_canal(canal):
         await msg.add_reaction("❓")
 
 async def obter_nao_votaram(canal, nome_cargo):
-    """Varre as reações e lista quem tem o cargo mas ainda não votou."""
+    """Calcula quem ainda não votou num determinado canal com base no cargo."""
     msg_ids = mensagens_votacao.get(canal.id, [])
     if not msg_ids:
         return None, "❌ Ainda não existe nenhuma votação ativa neste canal."
@@ -86,7 +81,7 @@ async def obter_nao_votaram(canal, nome_cargo):
     for msg_id in msg_ids:
         try:
             mensagem = await canal.fetch_message(msg_id)
-        except Exception:
+        except:
             continue
 
         for reaction in mensagem.reactions:
@@ -124,11 +119,12 @@ async def on_ready():
 
 @bot.command()
 async def votacao(ctx):
+    # Verifica se o canal atual está configurado
     if ctx.channel.id not in CONFIGS:
         await ctx.send("❌ Este canal não está configurado para votações automáticas.")
         return
 
-    await ctx.send("🔄 A iniciar votação...")
+    await ctx.send("🔄 A iniciar votação manualmente...")
     await criar_votacao_no_canal(ctx.channel)
 
 # ==========================
@@ -143,6 +139,7 @@ async def naovotaram(ctx):
 
     nome_cargo = CONFIGS[ctx.channel.id]["cargo"]
     
+    # Mostra um aviso rápido de "a carregar" pois ler reações pode demorar alguns segundos
     async with ctx.typing():
         faltam, erro = await obter_nao_votaram(ctx.channel, nome_cargo)
 
@@ -150,7 +147,7 @@ async def naovotaram(ctx):
         await ctx.send(erro)
         return
 
-    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
+    data = datetime.now().strftime("%d/%m/%Y")
 
     if not faltam:
         await ctx.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
@@ -192,9 +189,9 @@ async def verificar_nao_votaram():
         faltam, erro = await obter_nao_votaram(canal, nome_cargo)
 
         if erro:
-            continue  # Salta se não houver votação decorrente neste canal
+            continue  # Se houver erro (ex: votação não iniciada), ignora este canal
 
-        data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
+        data = datetime.now().strftime("%d/%m/%Y")
 
         if not faltam:
             await canal.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
