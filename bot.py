@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
+from datetime import datetime, time, timedelta, timezone
 import os
 
 TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cGBRPTrzeri1c")
@@ -10,14 +9,20 @@ TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cG
 # CONFIGURAÇÕES
 # ==========================
 
-PORTUGAL = ZoneInfo("Europe/Lisbon")
+# Evita o crash "ZoneInfoNotFoundError" comum em hostings Linux (ex: Square Cloud)
+try:
+    from zoneinfo import ZoneInfo
+    PORTUGAL = ZoneInfo("Europe/Lisbon")
+except Exception:
+    # Se falhar, define manualmente UTC+1 (Horário de Portugal)
+    PORTUGAL = timezone(timedelta(hours=1))
 
-# Canais mapeados diretamente para os respetivos cargos de cada Discord
+# Mapeamento de cada Canal ID para o respetivo Cargo de cada servidor
 CONFIGS = {
     1519822701936771244: {
         "cargo": "[🧢] Contratado"
     },
-    1478143333351162150: {  # ID corrigido aqui
+    1478143333351162150: {
         "cargo": "[🧢] Caixa Baixa"
     }
 }
@@ -40,7 +45,7 @@ async def criar_votacao_no_canal(canal):
     """Gera a votação diária num canal específico e guarda os IDs das mensagens."""
     mensagens_votacao[canal.id] = []
     
-    data = datetime.now().strftime("%d/%m/%Y")
+    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
     embed = discord.Embed(
         title="📅 Votação de Disponibilidade",
@@ -145,7 +150,7 @@ async def naovotaram(ctx):
         await ctx.send(erro)
         return
 
-    data = datetime.now().strftime("%d/%m/%Y")
+    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
     if not faltam:
         await ctx.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
@@ -189,7 +194,7 @@ async def verificar_nao_votaram():
         if erro:
             continue  # Salta se não houver votação decorrente neste canal
 
-        data = datetime.now().strftime("%d/%m/%Y")
+        data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
         if not faltam:
             await canal.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
