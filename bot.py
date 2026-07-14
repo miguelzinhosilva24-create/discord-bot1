@@ -9,7 +9,6 @@ import traceback
 # ====================================================================
 # Substitui "TEU_TOKEN_AQUI" pelo token real do teu bot.
 TOKEN_DIRETO = "MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM"
-TOKEN = os.getenv("DISCORD_TOKEN") if TOKEN_DIRETO == "TEU_TOKEN_AQUI" else TOKEN_DIRETO
 # ====================================================================
 
 # Configuração do Fuso Horário de Portugal
