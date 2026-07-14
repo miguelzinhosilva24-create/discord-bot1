@@ -1,23 +1,30 @@
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
+from datetime import datetime, time, timedelta, timezone
 import os
+import traceback
 
-TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cGBRPTrzeri1c")
+# COLA O TEU TOKEN DO DISCORD DENTRO DAS ASPAS ABAIXO:
+TOKEN = "MTUyNjI0NDQ4MDg2MzE3NDc0Nw.Gol6ZW.p6gQd9MBwQ5WXLWcFqODaUVi3cGBRPTrzeri1c"
 
 # ==========================
 # CONFIGURAÇÕES
 # ==========================
 
-PORTUGAL = ZoneInfo("Europe/Lisbon")
+# Evita erros de fuso horário em ambientes Linux sem a biblioteca tzdata
+try:
+    from zoneinfo import ZoneInfo
+    PORTUGAL = ZoneInfo("Europe/Lisbon")
+except Exception:
+    # Fallback automático para UTC+1 (Portugal Continental na maioria do ano)
+    PORTUGAL = timezone(timedelta(hours=1))
 
-# Dicionário com as configurações de cada canal/servidor
+# Configurações de cada canal e o seu respetivo cargo (Separados por servidor)
 CONFIGS = {
     1519822701936771244: {
         "cargo": "[🧢] Contratado"
     },
-    1526617431022370868: {
+    1478143333351162150: {
         "cargo": "[🧢] Caixa Baixa"
     }
 }
@@ -25,22 +32,32 @@ CONFIGS = {
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.guilds = True  # Garante acesso correto às informações dos servidores
+intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Agora guardamos as mensagens por Canal ID -> ex: { 1519822701936...: [id1, id2, ...] }
+# Guarda as mensagens de votação por canal -> { canal_id: [id_msg1, id_msg2, ...] }
 mensagens_votacao = {}
 
 # ==========================
 # FUNÇÕES AUXILIARES
 # ==========================
 
+async def obter_canal_seguro(canal_id):
+    """Procura o canal no cache do bot. Se não encontrar, força a procura via API."""
+    canal = bot.get_channel(canal_id)
+    if canal is None:
+        try:
+            canal = await bot.fetch_channel(canal_id)
+        except Exception:
+            return None
+    return canal
+
 async def criar_votacao_no_canal(canal):
-    """Cria a votação num canal específico e guarda os IDs das mensagens."""
+    """Gera o painel de votação no canal pretendido e armazena os IDs das mensagens."""
     mensagens_votacao[canal.id] = []
     
-    data = datetime.now().strftime("%d/%m/%Y")
+    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
     embed = discord.Embed(
         title="📅 Votação de Disponibilidade",
@@ -67,30 +84,44 @@ async def criar_votacao_no_canal(canal):
         await msg.add_reaction("❓")
 
 async def obter_nao_votaram(canal, nome_cargo):
-    """Calcula quem ainda não votou num determinado canal com base no cargo."""
+    """Varre as reações do canal e devolve a lista de menções dos membros que não votaram."""
     msg_ids = mensagens_votacao.get(canal.id, [])
     if not msg_ids:
-        return None, "❌ Ainda não existe nenhuma votação ativa neste canal."
+        return None, "❌ Não há nenhuma votação ativa registada na memória do bot para este canal. Usa `!votacao` primeiro."
+
+    # Força a atualização da lista de membros do servidor se ainda não foi feita
+    if not canal.guild.chunked:
+        await canal.guild.chunk()
 
     cargo = discord.utils.get(canal.guild.roles, name=nome_cargo)
     if cargo is None:
-        return None, f"❌ Cargo '{nome_cargo}' não encontrado neste servidor."
+        return None, f"❌ Cargo '{nome_cargo}' não foi encontrado neste servidor. Verifica se o nome está idêntico."
 
     votaram = set()
 
     for msg_id in msg_ids:
         try:
             mensagem = await canal.fetch_message(msg_id)
-        except:
+        except discord.Forbidden:
+            return None, "❌ O bot não tem permissão para ler o histórico de mensagens neste canal."
+        except discord.NotFound:
             continue
+        except Exception as e:
+            return None, f"❌ Erro ao ler mensagem {msg_id}: {str(e)}"
 
         for reaction in mensagem.reactions:
             async for user in reaction.users():
                 if not user.bot:
                     votaram.add(user.id)
 
+    # Filtra quem tem o cargo mas não votou
     faltam = []
-    for membro in cargo.members:
+    membros_cargo = cargo.members
+    
+    if not membros_cargo:
+        return None, f"⚠️ O bot detetou 0 membros com o cargo `{nome_cargo}` neste servidor. Garante que os 'Intents de Membros' estão ativados no Developer Portal do Discord."
+
+    for membro in membros_cargo:
         if membro.bot:
             continue
 
@@ -106,6 +137,19 @@ async def obter_nao_votaram(canal, nome_cargo):
 @bot.event
 async def on_ready():
     print(f"✅ Bot ligado como {bot.user}")
+    
+    # Carrega todos os membros de cada servidor em cache ao iniciar
+    for guild in bot.guilds:
+        await guild.chunk()
+        print(f"📦 Servidor carregado com sucesso: {guild.name} (Membros: {guild.member_count})")
+
+    # Verifica o estado dos canais configurados
+    for canal_id in CONFIGS.keys():
+        canal = await obter_canal_seguro(canal_id)
+        if canal is None:
+            print(f"⚠️ Alerta: O bot não conseguiu encontrar ou aceder ao canal ID: {canal_id}")
+        else:
+            print(f"⭐ Canal detetado com sucesso: #{canal.name} no servidor '{canal.guild.name}'")
 
     if not votacao_automatica.is_running():
         votacao_automatica.start()
@@ -119,13 +163,16 @@ async def on_ready():
 
 @bot.command()
 async def votacao(ctx):
-    # Verifica se o canal atual está configurado
     if ctx.channel.id not in CONFIGS:
-        await ctx.send("❌ Este canal não está configurado para votações automáticas.")
+        await ctx.send("❌ Este canal não está configurado nas definições do bot.")
         return
 
-    await ctx.send("🔄 A iniciar votação manualmente...")
-    await criar_votacao_no_canal(ctx.channel)
+    try:
+        await ctx.send("🔄 A iniciar votação...")
+        await criar_votacao_no_canal(ctx.channel)
+    except Exception as e:
+        await ctx.send(f"❌ Erro ao criar votação: `{str(e)}`")
+        traceback.print_exc()
 
 # ==========================
 # COMANDO !NAOVOTARAM
@@ -139,15 +186,19 @@ async def naovotaram(ctx):
 
     nome_cargo = CONFIGS[ctx.channel.id]["cargo"]
     
-    # Mostra um aviso rápido de "a carregar" pois ler reações pode demorar alguns segundos
     async with ctx.typing():
-        faltam, erro = await obter_nao_votaram(ctx.channel, nome_cargo)
+        try:
+            faltam, erro = await obter_nao_votaram(ctx.channel, nome_cargo)
+        except Exception as e:
+            await ctx.send(f"❌ Ocorreu um erro crítico no comando: `{str(e)}`")
+            traceback.print_exc()
+            return
 
     if erro:
         await ctx.send(erro)
         return
 
-    data = datetime.now().strftime("%d/%m/%Y")
+    data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
     if not faltam:
         await ctx.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
@@ -166,7 +217,7 @@ async def naovotaram(ctx):
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PORTUGAL))
 async def votacao_automatica():
     for canal_id in CONFIGS.keys():
-        canal = bot.get_channel(canal_id)
+        canal = await obter_canal_seguro(canal_id)
         if canal is None:
             continue
         try:
@@ -181,27 +232,29 @@ async def votacao_automatica():
 @tasks.loop(time=time(hour=14, minute=0, tzinfo=PORTUGAL))
 async def verificar_nao_votaram():
     for canal_id, info in CONFIGS.items():
-        canal = bot.get_channel(canal_id)
+        canal = await obter_canal_seguro(canal_id)
         if canal is None:
             continue
 
         nome_cargo = info["cargo"]
-        faltam, erro = await obter_nao_votaram(canal, nome_cargo)
+        try:
+            faltam, erro = await obter_nao_votaram(canal, nome_cargo)
+            if erro:
+                continue
 
-        if erro:
-            continue  # Se houver erro (ex: votação não iniciada), ignora este canal
+            data = datetime.now(PORTUGAL).strftime("%d/%m/%Y")
 
-        data = datetime.now().strftime("%d/%m/%Y")
-
-        if not faltam:
-            await canal.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
-        else:
-            texto = (
-                f"📅 **{data}**\n\n"
-                f"❌ **Membros com o cargo {nome_cargo} que ainda não votaram ({len(faltam)}):**\n\n"
-            )
-            texto += "\n".join(faltam)
-            await canal.send(texto)
+            if not faltam:
+                await canal.send(f"✅ Todos os membros com o cargo **{nome_cargo}** votaram!\n📅 {data}")
+            else:
+                texto = (
+                    f"📅 **{data}**\n\n"
+                    f"❌ **Membros com o cargo {nome_cargo} que ainda não votaram ({len(faltam)}):**\n\n"
+                )
+                texto += "\n".join(faltam)
+                await canal.send(texto)
+        except Exception as e:
+            print(f"Erro ao verificar não votaram no canal {canal_id}: {e}")
 
 # ==========================
 # INICIAR BOT
