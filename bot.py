@@ -4,19 +4,23 @@ from datetime import datetime, time, timedelta, timezone
 import os
 import traceback
 
-# Puxa o token de forma segura a partir do painel de alojamento (sem expor no GitHub)
-TOKEN = os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM")
+# ====================================================================
+# CONFIGURAÇÃO DO SEU TOKEN
+# ====================================================================
+# Substitui "TEU_TOKEN_AQUI" pelo token real do teu bot.
+TOKEN_DIRETO = "MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM"
+TOKEN = os.getenv("DISCORD_TOKEN") if TOKEN_DIRETO == "TEU_TOKEN_AQUI" else TOKEN_DIRETO
+# ====================================================================
 
-# ==========================
-# CONFIGURAÇÕES
-# ==========================
-
+# Configuração do Fuso Horário de Portugal
 try:
     from zoneinfo import ZoneInfo
     PORTUGAL = ZoneInfo("Europe/Lisbon")
 except Exception:
+    # Fallback caso o sistema não tenha o zoneinfo instalado
     PORTUGAL = timezone(timedelta(hours=1))
 
+# Configurações de IDs de Canais e Cargos Associados
 CONFIGS = {
     1519822701936771244: {
         "cargo": "[🧢] Contratado"
@@ -26,6 +30,7 @@ CONFIGS = {
     }
 }
 
+# Permissões do Bot (Intents)
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -112,10 +117,13 @@ async def obter_nao_votaram(canal, nome_cargo):
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot ligado como {bot.user}")
+    print(f"=====================================")
+    print(f"✅ Bot ligado com sucesso como {bot.user}")
+    print(f"=====================================")
+    
     for guild in bot.guilds:
         await guild.chunk()
-    
+        
     if not votacao_automatica.is_running():
         votacao_automatica.start()
     if not verificar_nao_votaram.is_running():
@@ -124,18 +132,18 @@ async def on_ready():
 @bot.command()
 async def votacao(ctx):
     if ctx.channel.id not in CONFIGS:
-        await ctx.send("❌ Este canal não está configurado.")
+        await ctx.send("❌ Este canal não está configurado nas definições do bot.")
         return
     try:
         await ctx.send("🔄 A iniciar votação...")
         await criar_votacao_no_canal(ctx.channel)
     except Exception as e:
-        await ctx.send(f"❌ Erro: `{str(e)}`")
+        await ctx.send(f"❌ Erro ao criar votação: `{str(e)}`")
 
 @bot.command()
 async def naovotaram(ctx):
     if ctx.channel.id not in CONFIGS:
-        await ctx.send("❌ Este canal não está configurado.")
+        await ctx.send("❌ Este canal não está configurado nas definições do bot.")
         return
 
     nome_cargo = CONFIGS[ctx.channel.id]["cargo"]
@@ -158,6 +166,7 @@ async def naovotaram(ctx):
 # TAREFAS AUTOMÁTICAS
 # ==========================
 
+# Votação Diária Automática (Executada às 00:01 do fuso horário de Portugal)
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PORTUGAL))
 async def votacao_automatica():
     for canal_id in CONFIGS.keys():
@@ -166,8 +175,9 @@ async def votacao_automatica():
             try:
                 await criar_votacao_no_canal(canal)
             except Exception as e:
-                print(f"Erro na votação diária: {e}")
+                print(f"Erro na votação diária automática: {e}")
 
+# Alerta de Membros que não Votaram (Executado às 14:00 do fuso horário de Portugal)
 @tasks.loop(time=time(hour=14, minute=0, tzinfo=PORTUGAL))
 async def verificar_nao_votaram():
     for canal_id, info in CONFIGS.items():
@@ -189,6 +199,13 @@ async def verificar_nao_votaram():
                 texto += "\n".join(faltam)
                 await canal.send(texto)
         except Exception as e:
-            print(f"Erro ao verificar votações: {e}")
+            print(f"Erro ao verificar quem não votou automaticamente: {e}")
 
-bot.run(TOKEN)
+# Execução e Login do Bot
+if not TOKEN or TOKEN in ["", "TEU_TOKEN_AQUI"]:
+    print("\n[ERRO] Nenhum Token do Discord configurado! Adiciona o token na linha 12 do teu ficheiro.\n")
+else:
+    try:
+        bot.run(TOKEN)
+    except discord.errors.LoginFailure:
+        print("\n[ERRO DE LOGIN] O token fornecido não é válido. Confirma o token no Discord Developer Portal.\n")
