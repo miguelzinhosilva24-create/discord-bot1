@@ -7,8 +7,10 @@ import traceback
 # ====================================================================
 # CONFIGURAÇÃO DO SEU TOKEN
 # ====================================================================
-# Substitui "TEU_TOKEN_AQUI" pelo token real do teu bot.
+# Se preferires, podes colar o token direto aqui dentro das aspas.
+# Se deixares vazio "", o bot vai usar a variável que criaste na Railway!
 TOKEN_DIRETO = "MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM"
+TOKEN = TOKEN_DIRETO if TOKEN_DIRETO else os.getenv("MTUyNjI0NDQ4MDg2MzE3NDc0Nw.GILBzY.jKebRMEW6vnNyMs4DV_wHRe1qtigY8jBHTsDUM")
 # ====================================================================
 
 # Configuração do Fuso Horário de Portugal
@@ -199,6 +201,4 @@ async def verificar_nao_votaram():
                 await canal.send(texto)
         except Exception as e:
             print(f"Erro ao verificar quem não votou automaticamente: {e}")
-
-# Execução e Login do Bot
 
