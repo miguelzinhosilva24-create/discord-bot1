@@ -201,10 +201,4 @@ async def verificar_nao_votaram():
             print(f"Erro ao verificar quem não votou automaticamente: {e}")
 
 # Execução e Login do Bot
-if not TOKEN or TOKEN in ["", "TEU_TOKEN_AQUI"]:
-    print("\n[ERRO] Nenhum Token do Discord configurado! Adiciona o token na linha 12 do teu ficheiro.\n")
-else:
-    try:
-        bot.run(TOKEN)
-    except discord.errors.LoginFailure:
-        print("\n[ERRO DE LOGIN] O token fornecido não é válido. Confirma o token no Discord Developer Portal.\n")
+
