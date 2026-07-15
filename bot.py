@@ -146,26 +146,30 @@ async def quem_nao_votou(canal, nome_cargo):
 @bot.event
 async def on_ready():
 
-    print("=" * 50)
-    print(f"✅ Bot ligado como {bot.user}")
-    print("=" * 50)
+    try:
+        print("=" * 50)
+        print(f"✅ Bot ligado como {bot.user}")
+        print("=" * 50)
 
-    for guild in bot.guilds:
-        try:
-            await guild.chunk()
-        except Exception:
-            pass
+        for guild in bot.guilds:
+            try:
+                await guild.chunk()
+            except Exception as e:
+                print(f"Erro ao carregar membros: {e}")
 
-    if not votacao_automatica.is_running():
-        votacao_automatica.start()
-        print("✅ Votação automática iniciada.")
+        if not votacao_automatica.is_running():
+            votacao_automatica.start()
+            print("✅ Votação automática iniciada.")
 
-    if not verificar_nao_votaram.is_running():
-        verificar_nao_votaram.start()
-        print("✅ Verificação automática iniciada.")
+        if not verificar_nao_votaram.is_running():
+            verificar_nao_votaram.start()
+            print("✅ Verificação automática iniciada.")
 
-    print("📅 Próxima votação:", votacao_automatica.next_iteration)
-    print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
+        print("📅 Próxima votação:", votacao_automatica.next_iteration)
+        print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
+
+    except Exception:
+        traceback.print_exc()
 
 # =====================================================
 # COMANDO !VOTACAO
