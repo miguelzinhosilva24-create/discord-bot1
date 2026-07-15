@@ -140,27 +140,32 @@ async def quem_nao_votou(canal, nome_cargo):
 
 @bot.event
 async def on_ready():
-
     print("=" * 50)
     print(f"✅ Bot ligado como {bot.user}")
     print("=" * 50)
 
+    print("Servidores encontrados:")
+
     for guild in bot.guilds:
-        try:
-            await guild.chunk()
-        except Exception:
-            pass
+        print(f"{guild.name} | ID: {guild.id}")
+
+    print("Canais configurados:")
+
+    for canal_id in CONFIGS:
+        canal = await obter_canal(canal_id)
+
+        if canal:
+            print(f"✅ {canal.name} | {canal.guild.name}")
+        else:
+            print(f"❌ Canal {canal_id} não encontrado")
 
     if not votacao_automatica.is_running():
         votacao_automatica.start()
-        print("✅ Votação automática iniciada.")
 
     if not verificar_nao_votaram.is_running():
         verificar_nao_votaram.start()
-        print("✅ Verificação automática iniciada.")
 
-    print("📅 Próxima votação:", votacao_automatica.next_iteration)
-    print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
+    print("✅ Tarefas iniciadas")
 
 
 # =====================================================
