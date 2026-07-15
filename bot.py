@@ -21,7 +21,7 @@ if not TOKEN:
 PORTUGAL = ZoneInfo("Europe/Lisbon")
 
 # =====================================================
-# CONFIGURAÇÃO DOS SERVIDORES
+# CONFIGURAÇÃO
 # =====================================================
 
 CONFIGS = {
@@ -35,7 +35,7 @@ CONFIGS = {
 }
 
 # =====================================================
-# INTENTS
+# BOT
 # =====================================================
 
 intents = discord.Intents.default()
@@ -48,7 +48,6 @@ bot = commands.Bot(
     intents=intents
 )
 
-# Guarda as mensagens da votação de cada canal
 mensagens_votacao = {}
 # =====================================================
 # FUNÇÕES AUXILIARES
@@ -104,10 +103,7 @@ async def quem_nao_votou(canal, nome_cargo):
     if canal.id not in mensagens_votacao:
         return None, "❌ Ainda não existe nenhuma votação neste canal."
 
-    cargo = discord.utils.get(
-        canal.guild.roles,
-        name=nome_cargo
-    )
+    cargo = discord.utils.get(canal.guild.roles, name=nome_cargo)
 
     if cargo is None:
         return None, f"❌ Cargo '{nome_cargo}' não encontrado."
@@ -124,7 +120,6 @@ async def quem_nao_votou(canal, nome_cargo):
         for reaction in mensagem.reactions:
 
             async for user in reaction.users():
-
                 if not user.bot:
                     votaram.add(user.id)
 
@@ -146,30 +141,27 @@ async def quem_nao_votou(canal, nome_cargo):
 @bot.event
 async def on_ready():
 
-    try:
-        print("=" * 50)
-        print(f"✅ Bot ligado como {bot.user}")
-        print("=" * 50)
+    print("=" * 50)
+    print(f"✅ Bot ligado como {bot.user}")
+    print("=" * 50)
 
-        for guild in bot.guilds:
-            try:
-                await guild.chunk()
-            except Exception as e:
-                print(f"Erro ao carregar membros: {e}")
+    for guild in bot.guilds:
+        try:
+            await guild.chunk()
+        except Exception:
+            pass
 
-        if not votacao_automatica.is_running():
-            votacao_automatica.start()
-            print("✅ Votação automática iniciada.")
+    if not votacao_automatica.is_running():
+        votacao_automatica.start()
+        print("✅ Votação automática iniciada.")
 
-        if not verificar_nao_votaram.is_running():
-            verificar_nao_votaram.start()
-            print("✅ Verificação automática iniciada.")
+    if not verificar_nao_votaram.is_running():
+        verificar_nao_votaram.start()
+        print("✅ Verificação automática iniciada.")
 
-        print("📅 Próxima votação:", votacao_automatica.next_iteration)
-        print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
+    print("📅 Próxima votação:", votacao_automatica.next_iteration)
+    print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
 
-    except Exception:
-        traceback.print_exc()
 
 # =====================================================
 # COMANDO !VOTACAO
@@ -183,11 +175,8 @@ async def votacao(ctx):
         return
 
     await criar_votacao(ctx.channel)
-
     await ctx.send("✅ Votação criada com sucesso.")
-
-
-# =====================================================
+    # =====================================================
 # COMANDO !NAOVOTARAM
 # =====================================================
 
@@ -200,12 +189,10 @@ async def naovotaram(ctx):
 
     cargo = CONFIGS[ctx.channel.id]["cargo"]
 
-    async with ctx.typing():
-
-        faltam, erro = await quem_nao_votou(
-            ctx.channel,
-            cargo
-        )
+    faltam, erro = await quem_nao_votou(
+        ctx.channel,
+        cargo
+    )
 
     if erro:
         await ctx.send(erro)
@@ -215,31 +202,23 @@ async def naovotaram(ctx):
 
     if not faltam:
 
-        embed = discord.Embed(
-            title="✅ Todos votaram",
-            description=(
-                f"Todos os membros com o cargo **{cargo}** votaram.\n\n"
-                f"📅 {data}"
-            ),
-            color=0x2ecc71
+        await ctx.send(
+            f"✅ Todos os membros com o cargo **{cargo}** votaram!\n📅 {data}"
         )
-
-        await ctx.send(embed=embed)
 
     else:
 
-        embed = discord.Embed(
-            title="❌ Ainda não votaram",
-            description="\n".join(faltam),
-            color=0xe74c3c
+        texto = (
+            f"📅 **{data}**\n\n"
+            f"❌ **Membros com o cargo {cargo} que ainda não votaram ({len(faltam)}):**\n\n"
         )
 
-        embed.set_footer(
-            text=f"{len(faltam)} membro(s) • {data}"
-        )
+        texto += "\n".join(faltam)
 
-        await ctx.send(embed=embed)
-        # =====================================================
+        await ctx.send(texto)
+
+
+# =====================================================
 # VOTAÇÃO AUTOMÁTICA (00:01)
 # =====================================================
 
@@ -257,20 +236,15 @@ async def votacao_automatica():
             continue
 
         try:
-
             await criar_votacao(canal)
-
             print(f"✅ Votação criada em #{canal.name}")
 
         except Exception:
-
-            print(f"❌ Erro ao criar votação no canal {canal_id}")
             traceback.print_exc()
 
 
 @votacao_automatica.before_loop
 async def before_votacao():
-
     await bot.wait_until_ready()
     # =====================================================
 # VERIFICAR QUEM NÃO VOTOU (14:00)
@@ -304,49 +278,27 @@ async def verificar_nao_votaram():
 
             if not faltam:
 
-                embed = discord.Embed(
-                    title="✅ Todos votaram",
-                    description=(
-                        f"Todos os membros com o cargo **{info['cargo']}** votaram.\n\n"
-                        f"📅 {data}"
-                    ),
-                    color=0x2ecc71
+                await canal.send(
+                    f"✅ Todos os membros com o cargo **{info['cargo']}** votaram!\n📅 {data}"
                 )
-
-                await canal.send(embed=embed)
 
             else:
 
-                embed = discord.Embed(
-                    title="❌ Ainda não votaram",
-                    description="\n".join(faltam),
-                    color=0xe74c3c
+                texto = (
+                    f"📅 **{data}**\n\n"
+                    f"❌ **Membros com o cargo {info['cargo']} que ainda não votaram ({len(faltam)}):**\n\n"
                 )
 
-                embed.add_field(
-                    name="Cargo",
-                    value=info["cargo"],
-                    inline=False
-                )
+                texto += "\n".join(faltam)
 
-                embed.add_field(
-                    name="Total",
-                    value=str(len(faltam)),
-                    inline=True
-                )
-
-                embed.set_footer(text=data)
-
-                await canal.send(embed=embed)
+                await canal.send(texto)
 
         except Exception:
-            print(f"❌ Erro ao verificar o canal {canal_id}")
             traceback.print_exc()
 
 
 @verificar_nao_votaram.before_loop
 async def before_verificar():
-
     await bot.wait_until_ready()
     # =====================================================
 # INICIAR BOT
