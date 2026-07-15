@@ -158,13 +158,14 @@ async def on_ready():
 
     if not votacao_automatica.is_running():
         votacao_automatica.start()
+        print("✅ Votação automática iniciada.")
 
     if not verificar_nao_votaram.is_running():
         verificar_nao_votaram.start()
+        print("✅ Verificação automática iniciada.")
 
-    print(f"📅 Próxima votação: {votacao_automatica.next_iteration}")
-    print(f"📋 Próxima verificação: {verificar_nao_votaram.next_iteration}")
-
+    print("📅 Próxima votação:", votacao_automatica.next_iteration)
+    print("📋 Próxima verificação:", verificar_nao_votaram.next_iteration)
 
 # =====================================================
 # COMANDO !VOTACAO
